@@ -1,0 +1,466 @@
+---
+title: "Final Paper - Determining Educational Outcomes in Massachusetts"
+author: "STOR 320.02 Group 15"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+#Put Necessary Libraries Here
+library(readr)
+library(dplyr) 
+library(ggplot2)
+library(readxl)
+library(sf)
+library(tidyverse)
+library(rmapshaper)
+library(tmap)
+library(car)
+library(corrplot) 
+library(stringr)
+library(gganimate)
+library(png)
+library(gifski)
+library(spdep)
+library(spatstat)
+library(maptools)
+library(geojsonsf)
+library(kableExtra)
+library(bestglm)
+library(leaps)
+library(purrr)
+library(broom)
+library(tidyr)
+library(modelr)
+```
+
+# INTRODUCTION
+```{r include = F}
+data <- read_csv("Final Project Dataset\\MA_Public_Schools_2017.csv")
+unnecessary = data[,-c(1,2,4,5,6,7,8,9,11,12,14,98:293)]
+data2 = unnecessary[,-c(2, 3, 20, 21, 23, 25, 27, 29, 34, 38, 43, 46, 47, 49, 50, 71:80, 87, 89:92, 94, 95)]
+data3 = data2 %>%
+  mutate(`Accountability and Assistance Description` = ifelse(`Accountability and Assistance Description` == "Very low assessment participation (Less than 90%)" | `Accountability and Assistance Description` ==  "Low assessment participation (Less than 95%)", NA, `Accountability and Assistance Description`), 
+         `% POC` = `% African American` + `% Asian` + `% Hispanic` + `% Native American` + `% Native Hawaiian, Pacific Islander` + `% Multi-Race, Non-Hispanic`) %>%
+  select(-c(`% African American`, `% Asian`, `% Hispanic`,  `% Native American`,  `% Native Hawaiian, Pacific Islander`, `% Multi-Race, Non-Hispanic`))
+data4 = data3[!is.na(data3$`Accountability and Assistance Description`),]
+data5 = data4 %>%
+  mutate(`Accountability and Assistance Description` = ifelse( `Accountability and Assistance Description` == "Meeting gap narrowing goals" | `Accountability and Assistance Description` == "2016 Level held harmless", 1, 0))
+```
+
+```{r forbestglm dataset, echo = F, include = F}
+forbestglm = data5[, c(18:30, 58, 56)]
+
+forbestglm = mutate_if(forbestglm, is.character, as.factor)
+
+forbestglm = as.data.frame(forbestglm)
+```
+
+```{r forbestglm2 dataset, echo = F, include = F}
+forbestglm2 = data5[, c(32, 35:36, 40:47, 51, 53, 55, 56)]
+
+forbestglm2 = mutate_if(forbestglm2, is.character, as.factor)
+
+forbestglm2 = as.data.frame(forbestglm2)
+```
+
+Most of us chose to attend the University of North Carolina at Chapel Hill because higher education allows us to gain further knowledge in our field of interest. We are all here for a similar reason but come from different backgrounds. We come from different cities, states, countries, schools, and environments, but specifically what factors enabled and supported us to get where we are today? Some students have been constrained by their upbringing, while others have gained a world of opportunities from their surroundings. Unfortunately, we know that the quality of education, including academic achievement and general educational opportunity, is significantly affected by varied demographics and factors. 
+
+Specifically, in the state of Massachusetts, the Massachusetts Department of Education has a mission to track a multitude of variables in a dataset that collects a wide range of data to improve teaching and learning in Massachusetts schools and remove discrimination. After collecting this data, the state can focus on specific areas that need growth and assistance. Our group has decided to target some areas ourselves and look into where improvements can be made. Here are the questions we tried to answer:
+
+1. How does geographic location affect school performance? We will primarily look at the Accountability and Assistance metric as well as how locations with more White students compare to locations with high percentages of students of color.
+
+2. Can we adequately predict whether or not a school is meeting the goals described in the Accountability and Assistance Description? One model will focus on the ability to predict based on demographic factors for all types of schools. Another model will predict for only high schools based on factors associated with graduation and testing. 
+
+It is important to investigate how schools in varied geographical locations perform with high percentages of White students versus high percentages of students of color to see how we, as a country, have grown since the desegregation of schools. In 1954, the U.S. Supreme Court voted to prohibit states from segregating public schools by race in the historic [Brown v. Board of Education case](https://www.oyez.org/cases/1940-1955/347us483). This decision had created a wave of civil rights movements that were ultimately very helpful, but least successful in integrating education, causing Black children to feel more isolated than before. The mission to undo school segregation is still unsolved today, creating large academic achievement disparities between races. Equal access to resources is a civil right and ensuring that schools are providing balanced resources for their students, regardless of their racial profile, is necessary for them to achieve academic success. Our second question works to identify whether the solutions to target academic achievement and mental wellbeing for students should be more demographic or academic based. In other words, should the Massachusetts Board of Education resolve disparities and meet standards from a demographic (language, percent disability, quantity of students, and financials) or academic (graduation rate, college type, AP Scores, and SAT Scores) perspective. This is important to explore so that the state and district are not wasting their resources and money on schools that are already performing well and meeting their standards. 
+
+By answering these questions and through our research, we want to make sure we can identify whether schools are functioning at their peak potential and allowing students from all backgrounds to build a substantial knowledge in the field of their interests as the students of UNC are able to. If students are raised in a healthy learning environment, we predict that they are more likely to develop skills that will help them become productive and capable members of society. 
+
+
+# DATA
+
+In 2017, the Massachusetts Department of Elementary and Secondary Education compiled a variety of data from schools and districts in their state. Schools and districts view, add, update, and delete their own directory information to ensure that the information is as up-to-date as possible. The original dataset contains 1862 observations describing schools in Massachusetts and 302 variables, describing the student body, funding levels, and outcomes of each school. While we have a comprehensive dataset, we decided to remove 239 variables that we deemed unnecessary for our questions which include ESE Code, address information, and MCAS (Massachusetts Comprehensive Assessment System) data. These variables were either senseless to analyze—in the case of variables like fax numbers—or too complex to analyze—such as the MCAS testing information, containing close to 100 variables, which would have congested the analysis process. We also chose to remove one of the percentage variables in each set; for example, we removed **% Male** because the information was inherently incorporated in **% Female**—as these were the only two options. 
+
+While exploring the dataset, we found that certain variables contained quite a few missing values. While some of this unfinished data is due to a lack of information, the other reason was that the variable did not apply to the observation/school; for example, there is no SAT data for grade levels that do not take the SAT, like pre-K, elementary, and middle school students. This led us to split the data up when answering our second question, based on the type of school: high school or non-high school. To ensure the validity of our data, we chose to focus on specific variables that were applicable to the schools that we were researching. The following figure shows the count of NA values for the variables we focused on in each model. The variables concerning high schools, such as higher education statistics, have high levels of NA values and are in red. The variables relevant to all schools have lower levels of NA values and are in blue. Due to the difference in usable data, we used two different models to answer our second question. We deemed the higher levels of NA values in the high school variables to be acceptable as the schools removed were ones that did not have enrollment up to twelfth grade, and, thus, the observations would have not been relevant in our analysis of high schools. We go further into this later in this section as well as in the results section.
+
+```{r echo = F, warning = F, message = F}
+NA.data = cbind(forbestglm2, forbestglm)
+
+NA.data_miss = NA.data %>%
+  select(-c(15,30))
+
+missing.values.NAdata <- NA.data_miss %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) 
+
+  ggplot(missing.values.NAdata) +
+    geom_bar(aes(x=key, y=num.missing, fill = key), stat = 'identity', show.legend = F) +
+    labs(x='Variable Name', y="Number of Missing Values", title='Missing Values in All Relevant Variables') +
+    theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    scale_fill_manual(values = c("% AP_Score 3-5" = "red",
+                                  "% Attending College" = "red",
+                                 "% Dropped Out" = "red",
+                                 "% GED" = "red",
+                                 "% Graduated" = "red",
+                                 "% MA Community College" = "red",
+                                 "% MA State University" = "red",
+                                 "% Private Four-Year" = "red",
+                                 "% Private Two-Year" = "red",
+                                 "% Public Four-Year" = "red",
+                                 "% Public Two-Year" = "red",
+                                 "% UMass" = "red",
+                                 "Average SAT_Math" = "red",
+                                 "Average SAT_Reading" = "red",
+                                 "Average Class Size" = "steelblue",
+                                 "Average Expenditures per Pupil" = "steelblue",
+                                 "Average In-District Expenditures per Pupil" = "steelblue",
+                                 "Average Salary" = "steelblue",
+                                 "FTE Count" = "steelblue",
+                                 "Number of Students" = "steelblue",
+                                 "Total # of Classes" = "steelblue")) 
+
+```
+
+
+The following variables were kept to accurately answer the questions we have about this data set. 
+
+```{r List of Variables Used in the 2 Models, echo = F, warning = F}
+df = data_frame("Demographic Variables" = colnames(forbestglm[1:14]), "High School Variables" = colnames(forbestglm2[1:14]))
+df %>%
+  kbl(col.names = NA) %>%
+
+  kable_classic_2(full_width = F)
+```
+
+For our variables, we decided to reorganize using two categories - demographic variables and high school variables. While most of the variables are self-explanatory, some deserve further explanation. The demographic variables tackle the variables that describe the student population across all Massachusetts districts. The **% English Language Learner** explains the percentage of students who are learning English, determined by those indicating a language other than English on their Home Language Survey, those less than proficient on an English proficiency exam, and those unable to perform classroom work in English. The **% High Needs** explains the percentage of students with disabilities, English language learners (ELL), former ELL students, or low-income students. The **% Economically Disadvantaged** explains the percentage of students who participate in the following state programs: the Supplemental Nutrition Assistance Program (SNAP), the Transitional Assistance for Families with Dependent Children (TAFDC), the Department of Children and Families' (DCF) foster care program, and MassHealth (Medicaid). The **FTE Count** stands for Full-Time Equivalents which describes the average pupil enrollment across schools in the school year. The **Average Expenditures per Pupil** explains the district operating expenditures for in-district programs, except for community services, fixed assets, debt services, and out-of-district expenditures.
+
+The high school variables tackle the variables that describe the academic achievements of high schoolers across all Massachusetts districts. The **% MA Community College** explains the percentage of students attending a Massachusetts community college after graduating from high school. The **% MA State University** explains the percentage of students who are attending a Massachusetts State University after graduating from high school. The **% UMass** explains the percentage of students who are attending a University in the University of Massachusetts School System after graduating high school. 
+
+Both of our questions are dependent on a variable called the **Accountability and Assistance Description**. In order to use logistic regression, the levels were assigned either 0 or 1 based on whether or not they met the state’s goals. Values like **Among lowest-performing 20% of subgroups** and **Among lowest-performing 20% of schools** were assigned as 0, while **Meeting gap narrowing goals** and **2016 Level held harmless** were the only values assigned as 1. In addition, observations where the low assessment was reported were removed to not skew the data. 
+
+# RESULTS
+
+**QUESTION 1:**
+
+In order to visualize the distribution of variables by location in Massachusetts, we merged our data, which included zip codes, to a shapefile of Massachusetts. Then, we created a map of Massachusetts showing which counties on average met the goals outlined in the Accountability and Assistance Metric—another name for Accountability and Assistance Description—and those that did not.
+
+```{r include = FALSE}
+school_data <- read.csv("Final Project Dataset\\MA_Public_Schools_2017.csv")
+school_data <- mutate(school_data, `SAT Scores` = `Average.SAT_Reading` + `Average.SAT_Math`)
+mass.map <- st_read("Final Project Dataset\\shapefiles\\ZIPCODES_NT_POLY.shp")
+
+new_zips <- sub("^0+", "", mass.map$POSTCODE)
+mass.newmap <- mass.map
+mass.newmap$POSTCODE <- new_zips
+
+merged_spatial <- merge(mass.newmap, school_data, by.x = "POSTCODE", by.y = "Zip", all.x = TRUE, all.y = FALSE)
+
+data <- read.csv("Final Project Dataset\\MA_Public_Schools_2017.csv")
+unnecessary = data[,-c(1,2,4,5,6,7,8,9,11,12,14,98:293)]
+data2 = unnecessary[,-c(3, 20, 21, 23, 25, 27, 29, 34, 38, 43, 46, 47, 49, 50, 71:80, 87, 89:92, 94, 95)]
+data3 = data2 %>%
+  mutate(Accountability.and.Assistance.Description = ifelse(Accountability.and.Assistance.Description == "Very low assessment participation (Less than 90%)" | Accountability.and.Assistance.Description ==  "Low assessment participation (Less than 95%)", NA, Accountability.and.Assistance.Description), 
+         pct_POC = X..African.American + X..Asian + X..Hispanic + X..Native.Hawaiian..Pacific.Islander + X..Multi.Race..Non.Hispanic) %>%
+  select(-c(X..African.American, X..Asian, X..Hispanic, X..Native.Hawaiian..Pacific.Islander, X..Multi.Race..Non.Hispanic))
+data4 = data3[!is.na(data3$Accountability.and.Assistance.Description),]
+data5 = data4 %>%
+  mutate(Accountability.and.Assistance.Description = ifelse( Accountability.and.Assistance.Description == "Meeting gap narrowing goals" | Accountability.and.Assistance.Description == "2016 Level held harmless", 1, 0))
+
+merged_spatial_new <- merge(mass.newmap, data5, by.x = "POSTCODE", by.y = "Zip", all.x = TRUE, all.y = FALSE)
+```
+
+```{r echo = FALSE, warning = FALSE, message = FALSE}
+tm_shape(merged_spatial_new) +
+  tm_polygons("Accountability.and.Assistance.Description", lwd = 0, legend.show = FALSE, palette = c("tan", "red")) +
+  tm_layout(legend.width = .9, main.title = "Met the Accountability and Assistance Metric on Average?", main.title.size = .8, main.title.position = "center") +
+  tm_add_legend(type = "fill", 
+                labels = c("Did NOT meet Accountability and Assistance metric", "Did meet Accountability and Assistance metric"),
+                col = c("tan", "red"),
+                border.lwd = .5) +
+  tmap_options(check.and.fix = TRUE) +
+  tm_shape(filter(merged_spatial, POSTCODE == 2121)) +
+  tm_borders(col = "black") +
+  tm_text(text = "CITY_TOWN")
+```
+
+The map itself was insufficient to analyze. The distribution of which areas met the metric appeared random to the bare eye, but we decided to make sure by using the Moran’s Statistic. The Moran’s Statistic is a measure of spatial autocorrelation. In other words, it measures whether the variable's geographic distribution is clustered, random, or dispersed. The Moran 1 Statistic has a continuous value from -1 (meaning perfectly dispersed), 0 (meaning random), to 1 (meaning perfectly clustered). The Moran statistic value of our data is 0.0364 which is very close to 0, meaning there is almost no autocorrelation and the spatial distribution of which zip codes passed the Accountability and Assistance metric on average is random.
+
+We then decided to look at the effect of race on the Accountability and Assistance Metric. First, we decided to see how the percentage of POC (people of color) students in schools was distributed throughout Massachusetts.
+
+```{r include = FALSE}
+school_25poc <- data5 %>%
+  filter(pct_POC < 25.0)
+school_25.50poc <- data5 %>%
+  filter(pct_POC >= 25.0 & pct_POC < 50.0)
+school_50.75poc <- data5 %>% 
+  filter(pct_POC >= 50.0 & pct_POC < 75.0)
+school_75.100poc <- data5 %>%
+  filter(pct_POC >= 75.0)
+
+school_race = data5 %>%
+mutate(race_cats = ifelse(pct_POC < 25.0, "0%-25%", ifelse(pct_POC >= 25.0 & pct_POC < 50.0, "25%-50%", ifelse(pct_POC >= 50.0 & pct_POC < 75.0, "50%-75%", ifelse(pct_POC >= 75.0, "75%-100%", NA)))))
+
+school_race_merged <- merge(mass.newmap, school_race, by.x = "POSTCODE", by.y = "Zip", all.x = TRUE, all.y = FALSE)
+```
+
+```{r echo = FALSE, warning = FALSE, message = FALSE}
+tm_shape(school_race_merged) +
+  tm_polygons("pct_POC", lwd = 0, title = "% POC") +
+  tm_layout(main.title = "POC population in Massachusetts Schools", main.title.size = .8, main.title.position = "center") +
+  tmap_options(check.and.fix = TRUE) +
+  tm_shape(filter(merged_spatial, POSTCODE == 2121)) +
+  tm_borders(col = "black") +
+  tm_text(text = "CITY_TOWN")
+```
+
+The map showed there were higher concentrations of POC students near Boston, as well as some other bigger cities in Massachusetts. A new variable was created splitting the percentage of POC into categories of 0%-25%, 25%-50%, 50%-75%, and 75%-100% to more easily distinguish between more diverse schools. We plotted these levels against the Accountability and Assistance Metric.
+
+```{r echo = FALSE, warning = FALSE, message = FALSE}
+ggplot(school_race %>% filter(!is.na(race_cats)), aes(x=race_cats, y=Accountability.and.Assistance.Description, fill=race_cats)) +
+geom_bar(stat = "summary", fun.y = "mean", show.legend = FALSE) +
+labs(x = "Percent of POC students in school", y = "Met Accountability and Assistance Metric") +
+theme(axis.title.y = element_text(size = 9))
+```
+
+While there was an increase in the metric for schools with percentages of POC students between 25% and 50%, there is a decrease for further increases in percentage of POC students. We then explored potential reasons for this decrease. A boxplot was created to show the different levels of POC students against graduation rates. 
+
+```{r echo = FALSE, warning = FALSE}
+graph_grad <- ggplot(school_race %>% filter(!is.na(race_cats)), aes(x=race_cats, y=X..Graduated, fill=race_cats)) +
+  geom_boxplot(show.legend = FALSE) +
+  labs(title = "Graduation rates by percentage of POC", x = "Percent of POC students in school", y = "Graduation Rate")
+
+graph_move_grad <- graph_grad +
+  transition_states(race_cats, wrap = FALSE) +
+  shadow_mark(alpha = .5)
+
+graph_move_grad
+```
+
+As shown, as the percentage of POC students increased, the average graduation rate of schools decreased, which could partially explain the decreased number of schools meeting the Accountability and Assistance metric. However, it is still unclear why the graduation rate decreases for schools with higher POC populations. A few different variables were explored to determine obvious differences in schools with different percentages of POC. The variables we predicted to show obvious relationships, such as expenditure per student and average teacher salary, did not show a significant difference. Finally, a boxplot was created showing the POC population against the economically disadvantaged percentage in schools.
+
+```{r echo = FALSE, warning = FALSE}
+graph_econdis <- ggplot(school_race %>% filter(!is.na(race_cats)), aes(x=race_cats, y=X..Economically.Disadvantaged, fill=race_cats)) +
+  geom_boxplot(show.legend = FALSE) +
+  labs(title = str_wrap("% of Students who are Economically Disadvantaged by % of POC Students at the School", 50), x = "Percent of POC students in school", y = "Economically Disadvantaged Percent")
+
+graph_move_econdis <- graph_econdis +
+  transition_states(race_cats, wrap = FALSE) +
+  shadow_mark(alpha = .5)
+
+graph_move_econdis
+```
+
+This plot showed an obvious relation. As the percentage of POC students in a school increased, the percentage of economically disadvantaged students also increased. This indicates that for POC students, even if the school they attend is provided with certain resources, if they come from an economically disadvantaged household, they will still be disenfranchised. 
+
+**QUESTION 2:** 
+
+```{r include = F}
+data <- read_csv("Final Project Dataset\\MA_Public_Schools_2017.csv")
+unnecessary = data[,-c(1,2,4,5,6,7,8,9,11,12,14,98:293)]
+data2 = unnecessary[,-c(2, 3, 20, 21, 23, 25, 27, 29, 34, 38, 43, 46, 47, 49, 50, 71:80, 87, 89:92, 94, 95)]
+data3 = data2 %>%
+  mutate(`Accountability and Assistance Description` = ifelse(`Accountability and Assistance Description` == "Very low assessment participation (Less than 90%)" | `Accountability and Assistance Description` ==  "Low assessment participation (Less than 95%)", NA, `Accountability and Assistance Description`), 
+         `% POC` = `% African American` + `% Asian` + `% Hispanic` + `% Native American` + `% Native Hawaiian, Pacific Islander` + `% Multi-Race, Non-Hispanic`) %>%
+  select(-c(`% African American`, `% Asian`, `% Hispanic`,  `% Native American`,  `% Native Hawaiian, Pacific Islander`, `% Multi-Race, Non-Hispanic`))
+data4 = data3[!is.na(data3$`Accountability and Assistance Description`),]
+data5 = data4 %>%
+  mutate(`Accountability and Assistance Description` = ifelse( `Accountability and Assistance Description` == "Meeting gap narrowing goals" | `Accountability and Assistance Description` == "2016 Level held harmless", 1, 0))
+```
+
+The second question focused on the data’s ability to predict the “Accountability and Assistance Description”, which predicted if the schools were meeting their goals. A logistic model was employed for two scenarios: all schools and only high schools. The first model used demographic information and was meant to be applied to schools across many grades. The second model only used information that applied to high schools, so the dataset became much smaller. The high school variables were identified in the Data section. 
+
+Using the bestglm function from its namesake’s package, we determined the two best logistic models for the two model sets. The function uses Bayesian Information Criterion (BIC) to determine the most efficient model. The following formula is how BIC is calculated:
+
+$BIC=(RSS+log(\textrm{n})*d*\hat σ^2)/n$
+
+Where... 
+
+```{r BIC Definitions, echo = F}
+c("d: The number of predictors",  "n: Total observations", "σ̂: Estimate of the variance of the error associated with each response measurement in a regression model", "RSS: Residual sum of squares of the regression model", "TSS: Total sum of squares of the regression model") %>%
+  kbl(col.names = "Definitions") %>%
+  kable_classic_2(full_width = F)
+```
+
+The objective of the bestglm function is to identify the model with the lowest BIC. The best two models from the demographic subset and high school subset were selected. The first demographic  best model was **Accountability and Assistance Description  = % Students With Disabilities + % Economically Disadvantaged + Total # of Classes + Average Class Size + Average Salary + % POC_*** with the second best being **Accountability and Assistance Description = % Students With Disabilities + % Economically Disadvantaged + Total # of Classes + Average Class Size + Average Expenditures per Pupil + % POC**.  The best high school models was **Accountability and Assistance Description = % Graduated + % AP_Score 3-5 + Average SAT_Math**, followed by **Accountability and Assistance Description = % Graduated + % Private Four-Year + % AP_Score 3-5**. 
+
+```{r BIC Table, echo = F, warning = F}
+list = tibble("BIC" = c(1832.0016, 1832.9953, 339.2559,339.4392))
+row.names(list) = c("1st Best Demographic Model","2nd Best Demographic Model", "1st Best High School Model", "2nd Best High School Model")
+list %>%
+  kbl() %>%
+  kable_classic_2(full_width = F)
+```
+
+In order to determine how effective our models were we used cross validation followed by an analysis of the error rate. Using 10-fold cross validation, the data was split up and applied to each of the models described above. The following error rates were determined:
+
+```{r include = F, warning = F, message = F}
+logit = function(odds)
+  {
+    prob = exp(odds)/(1+exp(odds))
+  return(prob)
+  }
+```
+
+```{r include = F, warning = F, message = F}
+set.seed(1234)
+data5kfold=crossv_kfold((data5) , 10)
+train.model.func=function(data){
+  mod = glm(`Accountability and Assistance Description`~`% Students With Disabilities` + `% Economically Disadvantaged` + `Total # of Classes` + `Average Class Size` + `Average Salary` + `% POC`, data = data, family = "binomial")
+  return(mod)
+}
+
+
+fortrain=  data5kfold %>% 
+       mutate(tr.model=map(train,train.model.func))
+
+fortrain.PREDICT = fortrain %>% 
+          mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+          select(predict) %>%
+          unnest()
+
+fortrain.PREDICT$.fitted = logit(fortrain.PREDICT$.fitted)
+
+train.model.func2=function(data){
+  mod= glm(`Accountability and Assistance Description`~`% Students With Disabilities` + `% Economically Disadvantaged` + `Total # of Classes` + `Average Class Size` + `Average Expenditures per Pupil` + `% POC`, data = data, family = "binomial")
+  return(mod)
+}
+
+
+fortrain2 =  data5kfold %>% 
+       mutate(tr.model=map(train,train.model.func2))
+fortrain.PREDICT2 = fortrain2 %>% 
+          mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+          select(predict) %>%
+          unnest()
+
+fortrain.PREDICT2$.fitted = logit(fortrain.PREDICT2$.fitted)
+
+train.model.func3=function(data){
+  mod = glm(`Accountability and Assistance Description`~ `% Graduated` + `% AP_Score 3-5` + `Average SAT_Math`, data = data, family = 'binomial')
+  return(mod)
+}
+
+
+fortrain3=  data5kfold %>% 
+       mutate(tr.model=map(train,train.model.func3))
+
+fortrain.PREDICT3 = fortrain3 %>% 
+          mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+          select(predict) %>%
+          unnest()
+fortrain.PREDICT3$.fitted = logit(fortrain.PREDICT3$.fitted)
+
+train.model.func4=function(data){
+  mod = glm(`Accountability and Assistance Description`~ `% Graduated` + `% Private Four-Year` + `% AP_Score 3-5`, data = data, family = 'binomial')
+  return(mod)
+}
+
+fortrain4=  data5kfold %>% 
+       mutate(tr.model=map(train,train.model.func4))
+
+fortrain.PREDICT4 = fortrain4 %>% 
+          mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x,))) %>%
+          select(predict) %>%
+          unnest()
+fortrain.PREDICT4$.fitted = logit(fortrain.PREDICT4$.fitted)
+```
+
+
+```{r Confusion Matrices & Error Rates, echo = F}
+confusionmatrix1 = fortrain.PREDICT %>% select(`Accountability and Assistance Description`, .fitted) %>%
+  mutate(S1 = ifelse(.fitted<.5, 0 , 1))
+  
+results1 = table(confusionmatrix1$`Accountability and Assistance Description`, confusionmatrix1$S1) %>% prop.table()
+
+confusionmatrix2 = fortrain.PREDICT2 %>% select(`Accountability and Assistance Description`, .fitted) %>%
+  mutate(S1 = ifelse(.fitted<.5, 0 , 1))
+  
+results2 = table(confusionmatrix2$`Accountability and Assistance Description`, confusionmatrix2$S1) %>% prop.table()
+
+error.results = tibble(
+  Model = c("1st Best Demographic Model", "2nd Best Demographic Model"),
+  Sensitivity = c(results1[1,1]/sum(results1[1,]), results2[1,1]/sum(results2[1,])),
+  Specificity = c(results1[2,2]/sum(results1[2,]), results2[2,2]/sum(results2[2,])),
+  `False Positive Rate` = c(results1[2,1]/sum(results1[2,]), results2[2,1]/sum(results2[2,])),
+  `False Negative Rate`= c(results1[1,2]/sum(results1[1,]), results2[1,2]/sum(results2[1,]))
+)
+confusionmatrixhs1 = fortrain.PREDICT3 %>% select(`Accountability and Assistance Description`, .fitted) %>%
+  mutate(S1 = ifelse(.fitted<.5, 0 , 1))
+  
+resultshs1 = table(confusionmatrixhs1$`Accountability and Assistance Description`, confusionmatrixhs1$S1) %>% prop.table()
+
+confusionmatrixhs2 = fortrain.PREDICT4 %>% select(`Accountability and Assistance Description`, .fitted) %>%
+  mutate(S1 = ifelse(.fitted<.5, 0 , 1))
+  
+resultshs2 = table(confusionmatrixhs2$`Accountability and Assistance Description`, confusionmatrixhs2$S1) %>% prop.table()
+
+error.resultshs = tibble(
+  Model = c("1st Best High School Model", "2nd Best High School Model"),
+  Sensitivity = c(resultshs1[1,1]/sum(resultshs1[1,]), resultshs2[1,1]/sum(resultshs2[1,])),
+  Specificity = c(resultshs1[2,2]/sum(resultshs1[2,]), resultshs2[2,2]/sum(resultshs2[2,])),
+  `False Positive Rate` = c(resultshs1[2,1]/sum(resultshs1[2,]), resultshs2[2,1]/sum(resultshs2[2,])),
+  `False Negative Rate`= c(resultshs1[1,2]/sum(resultshs1[1,]), resultshs2[1,2]/sum(resultshs2[1,]))
+)
+
+forerrorrate1 = fortrain.PREDICT %>% select(`Accountability and Assistance Description`, .fitted) %>%
+  mutate(S1 = ifelse(.fitted<.5, 0 , 1))
+errorrate1 = sum(abs(forerrorrate1$`Accountability and Assistance Description` - forerrorrate1$S1), na.rm=T)/nrow(na.omit(forbestglm))
+forerrorrate2 = fortrain.PREDICT2 %>% select(`Accountability and Assistance Description`, .fitted) %>%
+  mutate(S1 = ifelse(.fitted<.5, 0 , 1))
+errorrate2 = sum(abs(forerrorrate2$`Accountability and Assistance Description` - forerrorrate2$S1),na.rm=T)/nrow(na.omit(forbestglm))
+forerrorrate3 = fortrain.PREDICT3 %>% select(`Accountability and Assistance Description`, .fitted) %>%
+  mutate(S1 = ifelse(.fitted<.5, 0 , 1))
+errorrate3 = sum(abs(forerrorrate3$`Accountability and Assistance Description` - forerrorrate3$S1),na.rm=T)/nrow(na.omit(forbestglm2))
+forerrorrate4 = fortrain.PREDICT4 %>% select(`Accountability and Assistance Description`, .fitted) %>%
+  mutate(S1 = ifelse(.fitted<.5, 0 , 1))
+errorrate4 = sum(abs(forerrorrate4$`Accountability and Assistance Description` - forerrorrate4$S1),na.rm=T)/nrow(na.omit(forbestglm2))
+errortable = tibble( "Models" =   c("1st Best Demographic Model", "2nd Best Demographic Model", "1st Best High School Model", "2nd Best High School Model"), "Error Rates" = c(errorrate1,errorrate2, errorrate3, errorrate4))
+  
+
+errortable %>%
+  kbl() %>%
+  kable_classic_2(full_width = F)
+
+```
+
+The error rates identified from the models were quite similar in their ability to accurately predict, with the high school models predicting their data slightly better. It is important to mention that the data that was used for predicting the high schools was significantly smaller due to the removal of other grades. Considering the before-mentioned error rates, we decided to explore where the errors were for the 1st Best Demographic and High School Model. The sensitivity (the ability of the test to correctly identify schools not meeting standards) and specificity (the ability of a test to correctly identify schools meeting standards) were calculated. 
+
+```{r Sen/Spec 1DM & 1HS, echo = F, warning=F}
+dfer = tibble("Best Demographic Model" = c(error.results[1,2:3]), "Best High School Model" = c(error.resultshs[1,2:3]))
+row.names(dfer) = c("Sensitivity", "Specificity")
+dfer %>%
+  kbl() %>%
+  kable_classic_2(full_width = F)
+```
+
+Our models both had higher sensitivity than specificity which were caused by high false-positive rates. This means our models are quite efficient at determining if a school is not meeting standards but fails to determine if the school is meeting the standard. Finally, for the best models for each category, here are the negative and positive coefficients. 
+
+```{r Coef Table,  echo = F}
+dfcoef = tibble("Negative Coefficients - Best Demographic Model" = c("% Students With Disabilities", "% Economically Disadvantaged", "Total # of Classes", "Average Class Size"), "Positive Coefficient - Best Demographic Model" = c("Average Salary" , "% POC", "", ""))
+dfcoef2 = tibble("Negative Coefficients - Best High School Model" = c("% AP_Score 3-5", ""), "Positive Coefficient - Best High School Model" = c("% Graduated" , "Average SAT_Math"))
+dfcoef %>%
+  kbl(col.names = NA) %>%
+  kable_classic_2(full_width = F)
+dfcoef2 %>%
+  kbl(col.names = NA) %>%
+  kable_classic_2(full_width = F)
+```
+
+# CONCLUSION
+Throughout this project, our group hoped to answer two questions: whether the geographical location of a school–the zip code the school is located in–had an impact on the academic performance of students, and whether schools were meeting their goals from a demographic and academic standpoint. From our visualizations and analysis in the first question, we concluded that the most influential factor on academic performance was a school’s economic status rather than the racial distribution. From the models developed in the second question, we concluded that the two models–which predicted outcomes for high schools and non-high schools–were adequate in determining whether a school *is not* meeting standards but inadequate in determining if the school *is* meeting standards. Overall, while our findings were not far off from what we expected, there were a few things we found surprising. For example, it was disappointing to find that as the **% Students with Disabilities** increased, the probability that the school met its standards decreased. However, we also found that as the **% POC** increased, the probability of the school meeting its standards increased too. This was promising.
+
+Regarding the first question, it is important for us to identify regions in Massachusetts where there are gaps in academic achievements in order to make sure students across the state have an equitable education. Equality in education is necessary for students to have the same opportunities and create an equal playing field for future educational outcomes. In the pursuit of equity, we want to ensure that every student is given the same resources—even those who may need extra attention or help. Disparities in education and schools can lead to public and social suffering like lower income, higher healthcare costs, and increased crime. Studies by [Fryer and Levitt](http://pricetheory.uchicago.edu/levitt/Papers/FryerLevittUnderstandingTheBlack2004.pdf) (2004) have found that test score gaps between Black and White students can likely be explained by disparities in the quality of schools. These test score gaps have been linked to wage gaps between black and white individuals later on in life. Providing quality resources to POC students can work to reduce these gaps and improve socioeconomic equity.
+
+Regarding the second question, it is important for us to know whether schools are meeting their standards so that the way that schools are supported can be assessed. With more school support, students will have the resources they need to achieve academic success. When creating this project, our goal was to find a way to help schools support their students and guide each of them toward success in their areas of interest. Knowing which variables correspond with higher school success will be helpful in creating a classroom of students who are treated fairly. In the future, researchers may be able to update this model with new years of data, as the Massachusetts Department of Education collects this data yearly. 
+
+This data collection method can be replicated in other states and by proxy, in the country. While we focused on Massachusetts, collecting data in each state would help give a better idea of how the United States is doing at providing an equitable education. Generally, each state has its own educational system with some federal programs like the No Child Left Behind Act of 2001. Looking at wage/salary data across Massachusetts, and eventually other states, could help depict an even clearer picture as to the relationship between demographics and academics.  Having the level of data in Massachusetts available on a national level, and performing similar analyses as we have done above, could also help researchers determine if federal programs help students, and how federal and state governments can efficiently allocate budgets to improve student outcomes. 
+
+

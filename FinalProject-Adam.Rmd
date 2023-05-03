@@ -1,0 +1,59 @@
+---
+title: "Final Project"
+author: "Adam Huang"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(tidyverse)
+```
+
+```{r}
+# Questions:
+
+# 1. Is there a relationship between average salary and % graduated?
+# 2. Does race impact the type of school (public/private) someone attends? 
+
+```
+
+
+```{r}
+school_data <- read.csv("Final Project Dataset\\MA_Public_Schools_2017.csv")
+school_data
+
+# 1. Is there a relationship between average salary and % graduated?
+school_data1 <- school_data %>% 
+  select(School.Name, Town, State, Average.Salary, X..Graduated) %>%
+  na.omit()
+
+ggplot(school_data1, aes(x=Average.Salary, y=X..Graduated)) + 
+  geom_point() +
+  geom_smooth(method="lm") +
+  xlab("Average Salary") + 
+  ylab("% Graduated") 
+```
+```{r}
+# 2. Does race impact the type of school (public/private) someone attends? 
+school_data2 <- school_data %>%
+  select(School.Name, School.Type, X..African.American, X..Asian, X..Hispanic, X..White, X..Native.American, X..Native.Hawaiian..Pacific.Islander, X..Multi.Race..Non.Hispanic) %>%
+  rename("Race1(African American)"="X..African.American", "Race2 (Asian)"="X..Asian", "Race3 (Hispanic)"="X..Hispanic", "Race4 (White)"="X..White", "Race5 (Native American)"="X..Native.American", "Race6 (Pacific Islander)"="X..Native.Hawaiian..Pacific.Islander", "Race7 (Multi-Race)"="X..Multi.Race..Non.Hispanic")
+
+#school_data2
+
+school_data2Gather <- gather(school_data2, key="Race", value="percentage", 3:9)
+#school_data2Gather
+
+school_data2
+
+ggplot(school_data2Gather, aes(X=School.Type, y=percentage, color=Race)) +
+  geom_boxplot() +
+  xlab("Charter Schools || Public Schools") + 
+  ylab("Percentage of Races")
+```
+
