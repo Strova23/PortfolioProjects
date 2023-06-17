@@ -1,0 +1,72 @@
+Part 1:
+
+select * from crime_scene_report
+where date = 20180115 and city = 'SQL City' and type = 'murder'
+
+--Security footage shows that there were 2 witnesses. 
+--The first witness lives at the last house on "Northwestern Dr". 
+--The second witness, named Annabel, lives somewhere on "Franklin Ave".
+
+select * from person 
+where address_street_name = 'Northwestern Dr'
+order by address_number desc limit 1
+
+-- Morty Schapiro (Suspect)
+
+select * from person 
+where address_street_name = 'Franklin Ave' and name like 'Annabel%'
+
+-- Annabel Miller (Suspect)
+
+select * from interview
+where person_id = '14887' or person_id = '16371'
+
+--I heard a gunshot and then saw a man run out. He had a "Get Fit Now Gym" bag. 
+--The membership number on the bag started with "48Z". 
+--Only gold members have those bags. The man got into a car with a plate that included "H42W".
+
+--I saw the murder happen, and I recognized the killer from my gym when I was working out last week on January the 9th.
+
+select name from get_fit_now_member
+where id like '48Z%' and membership_status = 'gold'
+
+--Joe Germuska
+--Jeremy Bowers
+
+select id from drivers_license
+where plate_number like '%H42W%'
+
+-- Potential IDs
+--183779
+--423327
+--664760
+
+select name, license_id from person 
+left join drivers_license as driv on
+	person.license_id = driv.id
+where person.name = 'Joe Germuska' or person.name = 'Jeremy Bowers'
+
+--Joe Germuska	173289
+--Jeremy Bowers	423327
+
+Murderer is Jeremy Bowers
+
+Part 2:
+
+select p.id, p.name from person p
+left join drivers_license d on p.license_id = d.id
+left join income i on p.ssn = i.ssn
+left join facebook_event_checkin f on p.id = f.person_id
+where d.hair_color = 'red' and
+d.height between 65 and 67 and
+d.gender = 'female' and
+d.car_make = 'Tesla' and 
+d.car_model = 'Model S' and 
+f.event_name = 'SQL Symphony Concert' and f.date between 20171201 and 20171231
+order by i.annual_income desc
+
+--99716	Miranda Priestly
+--99716	Miranda Priestly
+--99716	Miranda Priestly
+
+Mastermind is Mirana Priestly
